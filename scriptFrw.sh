@@ -7,8 +7,7 @@ DIR="R:\S4\Mr.Naina\sprint\framwork0"
 cd "$DIR"
 
 # Compiler le fichier FrontController.java
-javac -d . FrontController.java
-javac -d . AnnotationController.java
+javac -d . *.java
 
 # Créer un fichier JAR en incluant le fichier compilé FrontController.class
 jar cf FrontController.jar mg

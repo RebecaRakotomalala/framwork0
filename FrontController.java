@@ -16,7 +16,7 @@ import java.util.List;
 import java.util.Map;
 
 public class FrontController extends HttpServlet {
-    private final Map<String, Mapping> urlMapping = new HashMap<>();
+    private final Map<String, List<Mapping>> urlMapping = new HashMap<>();
 
     @Override
     public void init(ServletConfig config) throws ServletException {
@@ -51,32 +51,16 @@ public class FrontController extends HttpServlet {
             } else if (!path.startsWith("/")) {
                 path = "/" + path;
             }
-            
-            Map<String, List<Mapping>> methodMappings = new HashMap<>();
     
-            for (Mapping mapping : urlMapping.values()) {
-                String mappingKey = mapping.getKey();
-                if (!mappingKey.startsWith("/")) {
-                    mappingKey = "/" + mappingKey;
-                }
-                if (mappingKey.equals(path)) {
-                    String methodName = mapping.getMethod().getName();
-                    methodMappings.putIfAbsent(methodName, new ArrayList<>());
-                    methodMappings.get(methodName).add(mapping);
-                }
-            }
+            List<Mapping> matchedMappings = urlMapping.getOrDefault(path, new ArrayList<>());
     
-            if (!methodMappings.isEmpty()) {
+            if (!matchedMappings.isEmpty()) {
                 out.println("<h2>Liste des contrôleurs et leurs méthodes annotées :</h2>");
                 out.println("<p>URL: " + path + "</p>");
-                for (Map.Entry<String, List<Mapping>> entry : methodMappings.entrySet()) {
-                    String methodName = entry.getKey();
-                    List<Mapping> mappings = entry.getValue();
-                    for (Mapping mapping : mappings) {
-                        out.println("<p>Classe: " + mapping.getControllerClass().getName() + "</p>");
-                        out.println("<p>Méthode: " + methodName + "</p>");
-                        out.println("<hr>");
-                    }
+                for (Mapping mapping : matchedMappings) {
+                    out.println("<p>Classe: " + mapping.getControllerClass().getName() + "</p>");
+                    out.println("<p>Méthode: " + mapping.getMethod().getName() + "</p>");
+                    out.println("<hr>");
                 }
             } else {
                 out.println("<h2 style='color:red'>Aucun mapping trouvé pour l'URL : " + path + "</h2>");
@@ -86,9 +70,7 @@ public class FrontController extends HttpServlet {
         } catch (IOException e) {
             e.printStackTrace();
         }
-    }
-    
-    
+    }    
 
     private void scanControllers(ServletConfig config) {
         String controllerPackage = config.getInitParameter("controller-package");
@@ -125,7 +107,8 @@ public class FrontController extends HttpServlet {
                                 if (!urlKey.startsWith("/")) {
                                     urlKey = "/" + urlKey;
                                 }
-                                urlMapping.put(urlKey, new Mapping(urlKey, clazz, method));
+                                urlMapping.putIfAbsent(urlKey, new ArrayList<>());
+                                urlMapping.get(urlKey).add(new Mapping(urlKey, clazz, method));
                                 System.out.println("Mapped URL: " + urlKey + " to " + clazz.getName() + "." + method.getName());
                             }
                         }
@@ -135,6 +118,5 @@ public class FrontController extends HttpServlet {
                 }
             }
         }
-    }
-
+    }    
 }

@@ -9,6 +9,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.File;
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -44,22 +45,30 @@ public class FrontController extends HttpServlet {
             out.println("<body>");
             out.println("<h1 style='color:blue'>URL actuelle :</h1>");
             out.println("<p>" + request.getRequestURL() + "</p>");
-    
+
             String path = request.getPathInfo();
             if (path == null) {
                 path = "/";
             } else if (!path.startsWith("/")) {
                 path = "/" + path;
             }
-    
+
             List<Mapping> matchedMappings = urlMapping.getOrDefault(path, new ArrayList<>());
-    
+
             if (!matchedMappings.isEmpty()) {
                 out.println("<h2>Liste des contrôleurs et leurs méthodes annotées :</h2>");
                 out.println("<p>URL: " + path + "</p>");
                 for (Mapping mapping : matchedMappings) {
                     out.println("<p>Classe: " + mapping.getControllerClass().getName() + "</p>");
                     out.println("<p>Méthode: " + mapping.getMethod().getName() + "</p>");
+                    try {
+                        Object controllerInstance = mapping.getControllerClass().getDeclaredConstructor().newInstance();
+                        Object result = mapping.getMethod().invoke(controllerInstance);
+                        out.println("<p>Valeur de retour: " + (result != null ? result.toString() : "null") + "</p>");
+                    } catch (InstantiationException | IllegalAccessException | InvocationTargetException | NoSuchMethodException e) {
+                        e.printStackTrace();
+                        out.println("<p style='color:red'>Erreur lors de l'invocation de la méthode: " + e.getMessage() + "</p>");
+                    }
                     out.println("<hr>");
                 }
             } else {
@@ -70,7 +79,7 @@ public class FrontController extends HttpServlet {
         } catch (IOException e) {
             e.printStackTrace();
         }
-    }    
+    }
 
     private void scanControllers(ServletConfig config) {
         String controllerPackage = config.getInitParameter("controller-package");
@@ -91,7 +100,7 @@ public class FrontController extends HttpServlet {
 
     private void scanDirectory(File directory, String packageName) {
         System.out.println("Scanning directory: " + directory.getAbsolutePath());
-    
+
         for (File file : directory.listFiles()) {
             if (file.isDirectory()) {
                 scanDirectory(file, packageName + "." + file.getName());
@@ -118,5 +127,5 @@ public class FrontController extends HttpServlet {
                 }
             }
         }
-    }    
+    }
 }

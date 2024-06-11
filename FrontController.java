@@ -35,7 +35,7 @@ public class FrontController extends HttpServlet {
         processRequest(request, response);
     }
 
-    private synchronized void processRequest(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
+    private void processRequest(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
         response.setContentType("text/html;charset=UTF-8");
         try (PrintWriter out = response.getWriter()) {
             out.println("<html>");
@@ -46,65 +46,70 @@ public class FrontController extends HttpServlet {
             out.println("<h1 style='color:blue'>URL actuelle :</h1>");
             out.println("<p>" + request.getRequestURL() + "</p>");
 
-            String path = request.getPathInfo();
-            if (path == null) {
-                path = "/";
-            } else if (!path.startsWith("/")) {
-                path = "/" + path;
-            }
-
+            String path = getPathInfo(request);
             List<Mapping> matchedMappings = urlMapping.get(path);
 
             if (matchedMappings != null && !matchedMappings.isEmpty()) {
-                out.println("<h2>Liste des contrôleurs et leurs méthodes annotées :</h2>");
-                out.println("<p>URL: " + path + "</p>");
-                for (Mapping mapping : matchedMappings) {
-                    displayMappingDetails(out, mapping);
-                    handleMethodInvocation(out, mapping);
-                }
+                handleMappings(out, matchedMappings);
             } else {
                 out.println("<h2 style='color:red'>Aucun mapping trouvé pour l'URL : " + path + "</h2>");
             }
             out.println("</body>");
             out.println("</html>");
-        } catch (IOException e) {
-            e.printStackTrace();
+        } catch (Exception e) {
+            handleException(response, e);
         }
     }
 
-    private void displayMappingDetails(PrintWriter out, Mapping mapping) {
-        out.println("<p>Classe: " + mapping.getControllerClass().getName() + "</p>");
-        out.println("<p>Méthode: " + mapping.getMethod().getName() + "</p>");
+    private String getPathInfo(HttpServletRequest request) {
+        String path = request.getPathInfo();
+        if (path == null) {
+            path = "/";
+        } else if (!path.startsWith("/")) {
+            path = "/" + path;
+        }
+        return path;
     }
-    
-    private void handleMethodInvocation(PrintWriter out, Mapping mapping) {
-        try {
+
+    private void handleMappings(PrintWriter out, List<Mapping> matchedMappings) throws InstantiationException, IllegalAccessException, InvocationTargetException, NoSuchMethodException {
+        out.println("<h2>Liste des contrôleurs et leurs méthodes annotées :</h2>");
+        for (Mapping mapping : matchedMappings) {
+            out.println("<p>Classe: " + mapping.getControllerClass().getName() + "</p>");
+            out.println("<p>Méthode: " + mapping.getMethod().getName() + "</p>");
             Object controllerInstance = mapping.getControllerClass().getDeclaredConstructor().newInstance();
             Object result = mapping.getMethod().invoke(controllerInstance);
-    
+
             if (result instanceof String) {
                 out.println("<p>Valeur de retour: " + result + "</p>");
             } else if (result instanceof ModelView) {
                 ModelView mv = (ModelView) result;
-                displayModelViewData(out, mv);
-                // Do not forward, just display the data
+                out.println("<h3>Data:</h3>");
+                for (Map.Entry<String, Object> entry : mv.getData().entrySet()) {
+                    out.println("<p>" + entry.getKey() + ": " + entry.getValue() + "</p>");
+                }
                 out.println("<p>URL de destination: " + mv.getUrl() + "</p>");
             } else {
-                out.println("<p>Valeur de retour non reconnue</p>");
+                out.println("<p>Valeur de retour non reconnu</p>");
             }
-        } catch (InstantiationException | IllegalAccessException | InvocationTargetException | NoSuchMethodException e) {
-            e.printStackTrace();
-            out.println("<p style='color:red'>Erreur lors de l'invocation de la méthode: " + e.getMessage() + "</p>");
+            out.println("<hr>");
         }
-        out.println("<hr>");
     }
-    
-    private void displayModelViewData(PrintWriter out, ModelView mv) {
-        out.println("<h3>Data:</h3>");
-        for (Map.Entry<String, Object> entry : mv.getData().entrySet()) {
-            out.println("<p>" + entry.getKey() + ": " + entry.getValue() + "</p>");
+
+    private void handleException(HttpServletResponse response, Exception e) throws IOException {
+        e.printStackTrace();
+        response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+        try (PrintWriter out = response.getWriter()) {
+            out.println("<html>");
+            out.println("<head>");
+            out.println("<title>Error</title>");
+            out.println("</head>");
+            out.println("<body>");
+            out.println("<h1 style='color:red'>Une erreur est survenue</h1>");
+            out.println("<p>" + e.getMessage() + "</p>");
+            out.println("</body>");
+            out.println("</html>");
         }
-    }    
+    }
 
     private void scanControllers(ServletConfig config) {
         String controllerPackage = config.getInitParameter("controller-package");
@@ -135,8 +140,8 @@ public class FrontController extends HttpServlet {
                     Class<?> clazz = Class.forName(className);
                     if (clazz.isAnnotationPresent(AnnotationController.class)) {
                         for (Method method : clazz.getDeclaredMethods()) {
-                            if (method.isAnnotationPresent(AnnotationMethode.class)) {
-                                AnnotationMethode requestMapping = method.getAnnotation(AnnotationMethode.class);
+                            if (method.isAnnotationPresent(GetAnnotation.class)) {
+                                GetAnnotation requestMapping = method.getAnnotation(GetAnnotation.class);
                                 String urlKey = requestMapping.value();
                                 if (!urlKey.startsWith("/")) {
                                     urlKey = "/" + urlKey;

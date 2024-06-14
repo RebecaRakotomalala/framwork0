@@ -11,16 +11,20 @@ javac -d . *.java
 
 # Créer un fichier JAR en incluant le fichier compilé FrontController.class
 jar cf AnnotationController.jar mg
-jar cf AnnotationMethode.jar mg
+jar cf GetAnnotation.jar mg
 jar cf FrontController.jar mg
 jar cf Mapping.jar mg
 jar cf ModelView.jar mg
+jar cf Post.jar  mg
+jar cf Param.jar  mg
 
 # Déplacer le fichier JAR créé dans le répertoire souhaité
 mv FrontController.jar "R:\S4\Mr.Naina\sprint\test\lib"
 mv AnnotationController.jar "R:\S4\Mr.Naina\sprint\test\lib"
-mv AnnotationMethode.jar "R:\S4\Mr.Naina\sprint\test\lib"
+mv GetAnnotation.jar "R:\S4\Mr.Naina\sprint\test\lib"
 mv Mapping.jar "R:\S4\Mr.Naina\sprint\test\lib"
 mv ModelView.jar "R:\S4\Mr.Naina\sprint\test\lib"
+mv Post.jar "R:\S4\Mr.Naina\sprint\test\lib"
+mv Param.jar "R:\S4\Mr.Naina\sprint\test\lib"
 
 sleep 60

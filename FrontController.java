@@ -4,6 +4,7 @@ import mg.itu.prom16.AnnotationController;
 import mg.itu.prom16.GetAnnotation;
 import mg.itu.prom16.Post;
 import mg.itu.prom16.Param;
+import mg.itu.prom16.CustomSession;
 
 import java.io.File;
 import java.io.IOException;
@@ -21,11 +22,12 @@ import java.lang.reflect.Method;
 import java.net.URLDecoder;
 import java.util.*;
 import java.util.concurrent.ExecutionException;
-import jakarta.servlet.RequestDispatcher;  // Import correct pour RequestDispatcher
+import jakarta.servlet.RequestDispatcher; 
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
 
 public class FrontController extends HttpServlet {
     private List<String> controller = new ArrayList<>();
@@ -172,39 +174,43 @@ public class FrontController extends HttpServlet {
         }
     }
 
+    private Object createRequestBodyParameter(Parameter parameter, Map<String, String[]> paramMap) throws Exception {
+        Class<?> paramType = parameter.getType();
+        Object paramObject = paramType.getDeclaredConstructor().newInstance();
+        for (Field field : paramType.getDeclaredFields()) {
+            String paramName = field.getName();
+            if (paramMap.containsKey(paramName)) {
+                String paramValue = paramMap.get(paramName)[0]; // Assuming single value for simplicity
+                field.setAccessible(true);
+                field.set(paramObject, paramValue);
+            }
+        }
+        return paramObject;
+    }
+    
     private Object[] getMethodParameters(Method method, HttpServletRequest request) throws Exception {
         Parameter[] parameters = method.getParameters();
         Object[] parameterValues = new Object[parameters.length];
-
-        Enumeration<String> params = request.getParameterNames();
-        Map<String, String> paramMap = new HashMap<>();
-
-        while (params.hasMoreElements()) {
-            String paramName = params.nextElement();
-            paramMap.put(paramName, request.getParameter(paramName));
-        }
-
+    
+        HttpSession session = request.getSession();
+    
         for (int i = 0; i < parameters.length; i++) {
-            if (parameters[i].isAnnotationPresent(RequestBody.class)) {
-                Class<?> paramType = parameters[i].getType();
-                Object paramObject = paramType.getDeclaredConstructor().newInstance();
-                for (Field field : paramType.getDeclaredFields()) {
-                    String paramName = field.getName();
-                    if (paramMap.containsKey(paramName)) {
-                        field.setAccessible(true);
-                        field.set(paramObject, paramMap.get(paramName));
-                    }
-                }
-                parameterValues[i] = paramObject;
-            } else if (parameters[i].isAnnotationPresent(Param.class)) {
-                Param param = parameters[i].getAnnotation(Param.class);
-                String paramValue = request.getParameter(param.value());
-                parameterValues[i] = paramValue; // Assuming all parameters are strings for simplicity
+            Parameter parameter = parameters[i];
+            if (parameter.getType() == CustomSession.class) {
+                parameterValues[i] = new CustomSession(session);
+            } else if (parameter.isAnnotationPresent(RequestBody.class)) {
+                parameterValues[i] = createRequestBodyParameter(parameter, request.getParameterMap());
+            } else if (parameter.isAnnotationPresent(Param.class)) {
+                Param param = parameter.getAnnotation(Param.class);
+                parameterValues[i] = request.getParameter(param.value()); // Assuming all parameters are strings for simplicity
+            } else {
+                throw new IllegalArgumentException("Paramètre non supporté pour cette méthode");
             }
         }
-
+    
         return parameterValues;
     }
+    
 }
 
 class Mapping {

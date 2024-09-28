@@ -107,16 +107,18 @@ public class FrontController extends HttpServlet {
                     // Envoyer la réponse JSON
                     out.print(jsonResponse);
 
-                } if (returnValue instanceof ModelView) {
-                    ModelView modelView = (ModelView) returnValue;
-                    for (Map.Entry<String, Object> entry : modelView.getData().entrySet()) {
-                        request.setAttribute(entry.getKey(), entry.getValue());
-                    }
-                
-                    // Utiliser sendRedirect pour rediriger vers l'URL spécifiée
-                    String redirectUrl = request.getContextPath() + modelView.getUrl();
-                    response.sendRedirect(redirectUrl);
                 } else {
+                    // Si ce n'est pas une API REST, continuer comme avant
+                    if (returnValue instanceof String) {
+                        out.println("Méthode trouvée dans " + returnValue);
+                    } else if (returnValue instanceof ModelView) {
+                        ModelView modelView = (ModelView) returnValue;
+                        for (Map.Entry<String, Object> entry : modelView.getData().entrySet()) {
+                            request.setAttribute(entry.getKey(), entry.getValue());
+                        }
+                        RequestDispatcher dispatcher = request.getRequestDispatcher(modelView.getUrl());
+                        dispatcher.forward(request, response);
+                    } else {
                         out.println("Type de données non reconnu");
                     }
                 }

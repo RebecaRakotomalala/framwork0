@@ -50,82 +50,83 @@ public class FrontController extends HttpServlet {
     protected void processRequest(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
         PrintWriter out = response.getWriter();
+        response.setContentType("text/html");
+        
+        // Récupérer l'URL et le verbe (GET/POST)
         String[] requestUrlSplitted = request.getRequestURL().toString().split("/");
         String controllerSearched = requestUrlSplitted[requestUrlSplitted.length - 1];
+        String verb = request.getMethod();  // GET ou POST
 
-        response.setContentType("text/html");
+        // Vérifier s'il y a des erreurs
         if (!error.isEmpty()) {
             out.println(error);
-        } else if (!lien.containsKey(controllerSearched)) {
-            out.println("<p>Méthode non trouvée.</p>");
-        } else {
-            try {
-                Mapping mapping = lien.get(controllerSearched);
-                Class<?> clazz = Class.forName(mapping.getClassName());
-                Method method = null;
-
-                // Find the method that matches the request type (GET or POST)
-                for (Method m : clazz.getDeclaredMethods()) {
-                    if (m.getName().equals(mapping.getMethodeName())) {
-                        if (request.getMethod().equalsIgnoreCase("GET") && m.isAnnotationPresent(GetAnnotation.class)) {
-                            method = m;
-                            break;
-                        } else if (request.getMethod().equalsIgnoreCase("POST") && m.isAnnotationPresent(Post.class)) {
-                            method = m;
-                            break;
-                        }
-                    }
-                }
-
-                if (method == null) {
-                    out.println("<p>Aucune méthode correspondante trouvée.</p>");
-                    return;
-                }
-
-                // Inject parameters
-                Object[] parameters = getMethodParameters(method, request);
-
-                Object object = clazz.getDeclaredConstructor().newInstance();
-                Object returnValue = method.invoke(object, parameters);
-
-                // Vérifier si la méthode est annotée avec @Restapi
-                if (method.isAnnotationPresent(Restapi.class)) {
-                    // Transformer le résultat en JSON
-                    response.setContentType("application/json");
-                    Gson gson = new Gson();
-                    String jsonResponse;
-
-                    // Si le retour est ModelView, transformer seulement "data"
-                    if (returnValue instanceof ModelView) {
-                        ModelView modelView = (ModelView) returnValue;
-                        jsonResponse = gson.toJson(modelView.getData());
-                    } else {
-                        // Si ce n'est pas un ModelView, transformer directement l'objet
-                        jsonResponse = gson.toJson(returnValue);
-                    }
-
-                    // Envoyer la réponse JSON
-                    out.print(jsonResponse);
-
-                } else {
-                    // Si ce n'est pas une API REST, continuer comme avant
-                    if (returnValue instanceof String) {
-                        out.println("Méthode trouvée dans " + returnValue);
-                    } else if (returnValue instanceof ModelView) {
-                        ModelView modelView = (ModelView) returnValue;
-                        for (Map.Entry<String, Object> entry : modelView.getData().entrySet()) {
-                            request.setAttribute(entry.getKey(), entry.getValue());
-                        }
-                        RequestDispatcher dispatcher = request.getRequestDispatcher(modelView.getUrl());
-                        dispatcher.forward(request, response);
-                    } else {
-                        out.println("Type de données non reconnu");
-                    }
-                }
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
+            out.close();
+            return;
         }
+
+        // Vérifier si l'URL est enregistrée avec le bon verbe (GET ou POST)
+        if (!lien.containsKey(controllerSearched + "-" + verb)) {
+            out.println("<p>Méthode non trouvée pour ce verbe (" + verb + ").</p>");
+            out.close();
+            return;
+        }
+
+        try {
+            // Récupérer le mapping (classe et méthode) en fonction de l'URL et du verbe
+            Mapping mapping = lien.get(controllerSearched + "-" + verb);
+            Class<?> clazz = Class.forName(mapping.getClassName());
+            
+            // Récupérer la méthode spécifiée dans le mapping
+            Method method = clazz.getDeclaredMethod(mapping.getMethodeName());
+
+            // Injection des paramètres dans la méthode
+            Object[] parameters = getMethodParameters(method, request);
+
+            // Créer une instance de l'objet contrôleur
+            Object controllerInstance = clazz.getDeclaredConstructor().newInstance();
+
+            // Exécuter la méthode avec les paramètres récupérés
+            Object returnValue = method.invoke(controllerInstance, parameters);
+
+            // Gérer le cas des API REST
+            if (method.isAnnotationPresent(Restapi.class)) {
+                // Réponse JSON pour les méthodes REST
+                response.setContentType("application/json");
+                Gson gson = new Gson();
+                String jsonResponse;
+
+                if (returnValue instanceof ModelView) {
+                    ModelView modelView = (ModelView) returnValue;
+                    jsonResponse = gson.toJson(modelView.getData());
+                } else {
+                    jsonResponse = gson.toJson(returnValue);
+                }
+
+                out.print(jsonResponse);
+            } else {
+                // Pour les autres types de retour non REST
+                if (returnValue instanceof String) {
+                    out.println("Méthode trouvée dans " + returnValue);
+                } else if (returnValue instanceof ModelView) {
+                    ModelView modelView = (ModelView) returnValue;
+
+                    // Ajouter les données du modèle à la requête
+                    for (Map.Entry<String, Object> entry : modelView.getData().entrySet()) {
+                        request.setAttribute(entry.getKey(), entry.getValue());
+                    }
+
+                    // Faire suivre la requête au bon fichier JSP
+                    RequestDispatcher dispatcher = request.getRequestDispatcher(modelView.getUrl());
+                    dispatcher.forward(request, response);
+                } else {
+                    out.println("Type de données non reconnu");
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            out.println("<p>Erreur lors du traitement de la requête : " + e.getMessage() + "</p>");
+        }
+
         out.close();
     }
 
@@ -164,20 +165,20 @@ public class FrontController extends HttpServlet {
 
                                 for (Method methode : methodes) {
                                     if (methode.isAnnotationPresent(GetAnnotation.class)) {
-                                        Mapping map = new Mapping(className, methode.getName());
+                                        Mapping map = new Mapping(className, methode.getName(), "GET");
                                         String valeur = methode.getAnnotation(GetAnnotation.class).value();
-                                        if (lien.containsKey(valeur)) {
-                                            throw new Exception("double url" + valeur);
+                                        if (lien.containsKey(valeur + "-GET")) {
+                                            throw new Exception("Double URL avec GET: " + valeur);
                                         } else {
-                                            lien.put(valeur, map);
+                                            lien.put(valeur + "-GET", map);
                                         }
                                     } else if (methode.isAnnotationPresent(Post.class)) {
-                                        Mapping map = new Mapping(className, methode.getName());
+                                        Mapping map = new Mapping(className, methode.getName(), "POST");
                                         String valeur = methode.getAnnotation(Post.class).value();
-                                        if (lien.containsKey(valeur)) {
-                                            throw new Exception("double url" + valeur);
+                                        if (lien.containsKey(valeur + "-POST")) {
+                                            throw new Exception("Double URL avec POST: " + valeur);
                                         } else {
-                                            lien.put(valeur, map);
+                                            lien.put(valeur + "-POST", map);
                                         }
                                     }
                                 }
@@ -238,25 +239,27 @@ public class FrontController extends HttpServlet {
 class Mapping {
     String className;
     String methodeName;
+    String verb;  
 
-    public Mapping(String className, String methodeName) {
+    public Mapping(String className, String methodeName, String verb) {
         this.className = className;
         this.methodeName = methodeName;
+        this.verb = verb; 
     }
 
     public String getClassName() {
         return className;
     }
 
-    public void setClassName(String className) {
-        this.className = className;
-    }
-
     public String getMethodeName() {
         return methodeName;
     }
 
-    public void setMethodeName(String methodeName) {
-        this.methodeName = methodeName;
+    public String getVerb() {
+        return verb;
+    }
+
+    public void setVerb(String verb) {
+        this.verb = verb;
     }
 }

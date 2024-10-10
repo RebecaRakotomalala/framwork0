@@ -6,6 +6,7 @@ import mg.itu.prom16.Post;
 import mg.itu.prom16.Param;
 import mg.itu.prom16.CustomSession;
 import mg.itu.prom16.Restapi;
+import mg.itu.prom16.VerbMethode;
 
 import java.io.File;
 import java.io.IOException;
@@ -51,80 +52,62 @@ public class FrontController extends HttpServlet {
             throws ServletException, IOException {
         PrintWriter out = response.getWriter();
         response.setContentType("text/html");
-        
-        // Récupérer l'URL et le verbe (GET/POST)
+
         String[] requestUrlSplitted = request.getRequestURL().toString().split("/");
         String controllerSearched = requestUrlSplitted[requestUrlSplitted.length - 1];
         String verb = request.getMethod();  // GET ou POST
 
-        // Vérifier s'il y a des erreurs
         if (!error.isEmpty()) {
             out.println(error);
             out.close();
             return;
         }
 
-        // Vérifier si l'URL est enregistrée avec le bon verbe (GET ou POST)
-        if (!lien.containsKey(controllerSearched + "-" + verb)) {
-            out.println("<p>Méthode non trouvée pour ce verbe (" + verb + ").</p>");
+        if (!lien.containsKey(controllerSearched)) {
+            out.println("<p>Méthode non trouvée pour cette URL.</p>");
             out.close();
             return;
         }
 
+        Mapping mapping = lien.get(controllerSearched);
+
+        // Vérifiez si c'est un GET ou POST et trouvez la méthode correspondante
+        Method method = null;
         try {
-            // Récupérer le mapping (classe et méthode) en fonction de l'URL et du verbe
-            Mapping mapping = lien.get(controllerSearched + "-" + verb);
             Class<?> clazz = Class.forName(mapping.getClassName());
-            
-            // Récupérer la méthode spécifiée dans le mapping
-            Method method = clazz.getDeclaredMethod(mapping.getMethodeName());
-
-            // Injection des paramètres dans la méthode
-            Object[] parameters = getMethodParameters(method, request);
-
-            // Créer une instance de l'objet contrôleur
-            Object controllerInstance = clazz.getDeclaredConstructor().newInstance();
-
-            // Exécuter la méthode avec les paramètres récupérés
-            Object returnValue = method.invoke(controllerInstance, parameters);
-
-            // Gérer le cas des API REST
-            if (method.isAnnotationPresent(Restapi.class)) {
-                // Réponse JSON pour les méthodes REST
-                response.setContentType("application/json");
-                Gson gson = new Gson();
-                String jsonResponse;
-
-                if (returnValue instanceof ModelView) {
-                    ModelView modelView = (ModelView) returnValue;
-                    jsonResponse = gson.toJson(modelView.getData());
-                } else {
-                    jsonResponse = gson.toJson(returnValue);
-                }
-
-                out.print(jsonResponse);
-            } else {
-                // Pour les autres types de retour non REST
-                if (returnValue instanceof String) {
-                    out.println("Méthode trouvée dans " + returnValue);
-                } else if (returnValue instanceof ModelView) {
-                    ModelView modelView = (ModelView) returnValue;
-
-                    // Ajouter les données du modèle à la requête
-                    for (Map.Entry<String, Object> entry : modelView.getData().entrySet()) {
-                        request.setAttribute(entry.getKey(), entry.getValue());
+            for (Method m : clazz.getDeclaredMethods()) {
+                if (verb.equalsIgnoreCase("GET") && m.isAnnotationPresent(GetAnnotation.class)) {
+                    GetAnnotation getAnnotation = m.getAnnotation(GetAnnotation.class);
+                    if (getAnnotation.value().equals(controllerSearched)) {
+                        method = m;
+                        break;
                     }
-
-                    // Faire suivre la requête au bon fichier JSP
-                    RequestDispatcher dispatcher = request.getRequestDispatcher(modelView.getUrl());
-                    dispatcher.forward(request, response);
-                } else {
-                    out.println("Type de données non reconnu");
+                } else if (verb.equalsIgnoreCase("POST") && m.isAnnotationPresent(Post.class)) {
+                    Post postAnnotation = m.getAnnotation(Post.class);
+                    if (postAnnotation.value().equals(controllerSearched)) {
+                        method = m;
+                        break;
+                    }
                 }
+            }
+
+            if (method == null) {
+                out.println("<p>Aucune méthode correspondante trouvée pour cette URL et ce verbe HTTP.</p>");
+                out.close();
+                return;
+            }
+
+            Object controllerInstance = clazz.getDeclaredConstructor().newInstance();
+            Object returnValue = method.invoke(controllerInstance);
+
+            if (returnValue instanceof String) {
+                out.println("Résultat: " + returnValue);
+            } else {
+                out.println("<p>Type de retour non reconnu.</p>");
             }
         } catch (Exception e) {
             e.printStackTrace();
-            out.println("<p>Erreur lors du traitement de la requête : " + e.getMessage() + "</p>");
+            out.println("<p>Erreur: " + e.getMessage() + "</p>");
         }
 
         out.close();
@@ -143,108 +126,97 @@ public class FrontController extends HttpServlet {
     }
 
     public void scan() throws Exception {
-        try {
-            String classesPath = getServletContext().getRealPath("/WEB-INF/classes");
-            String decodedPath = URLDecoder.decode(classesPath, "UTF-8");
-            String packagePath = decodedPath + "\\" + controllerPackage.replace('.', '\\');
-            File packageDirectory = new File(packagePath);
-            if (!packageDirectory.exists() || !packageDirectory.isDirectory()) {
-                throw new Exception("Package n'existe pas");
-            } else {
-                File[] classFiles = packageDirectory.listFiles((dir, name) -> name.endsWith(".class"));
-                if (classFiles != null) {
-                    for (File classFile : classFiles) {
-                        String className = controllerPackage + '.'
-                                + classFile.getName().substring(0, classFile.getName().length() - 6);
-                        try {
-                            Class<?> classe = Class.forName(className);
-                            if (classe.isAnnotationPresent(AnnotationController.class)) {
-                                controller.add(classe.getSimpleName());
-
-                                Method[] methodes = classe.getDeclaredMethods();
-
-                                for (Method methode : methodes) {
-                                    if (methode.isAnnotationPresent(GetAnnotation.class)) {
-                                        Mapping map = new Mapping(className, methode.getName(), "GET");
-                                        String valeur = methode.getAnnotation(GetAnnotation.class).value();
-                                        if (lien.containsKey(valeur + "-GET")) {
-                                            throw new Exception("Double URL avec GET: " + valeur);
-                                        } else {
-                                            lien.put(valeur + "-GET", map);
-                                        }
-                                    } else if (methode.isAnnotationPresent(Post.class)) {
-                                        Mapping map = new Mapping(className, methode.getName(), "POST");
-                                        String valeur = methode.getAnnotation(Post.class).value();
-                                        if (lien.containsKey(valeur + "-POST")) {
-                                            throw new Exception("Double URL avec POST: " + valeur);
-                                        } else {
-                                            lien.put(valeur + "-POST", map);
-                                        }
-                                    }
-                                }
+        String classesPath = getServletContext().getRealPath("/WEB-INF/classes");
+        String decodedPath = URLDecoder.decode(classesPath, "UTF-8");
+        String packagePath = decodedPath + "\\" + controllerPackage.replace('.', '\\');
+        File packageDirectory = new File(packagePath);
+    
+        if (!packageDirectory.exists() || !packageDirectory.isDirectory()) {
+            throw new Exception("Package n'existe pas");
+        }
+    
+        File[] classFiles = packageDirectory.listFiles((dir, name) -> name.endsWith(".class"));
+        if (classFiles != null) {
+            for (File classFile : classFiles) {
+                String className = controllerPackage + '.' + classFile.getName().substring(0, classFile.getName().length() - 6);
+                Class<?> clazz = Class.forName(className);
+    
+                if (clazz.isAnnotationPresent(AnnotationController.class)) {
+                    Method[] methods = clazz.getDeclaredMethods();
+    
+                    for (Method method : methods) {
+                        if (method.isAnnotationPresent(GetAnnotation.class)) {
+                            GetAnnotation getAnnotation = method.getAnnotation(GetAnnotation.class);
+                            if (getAnnotation.value().equals(controllerSearched)) {
+                                method = m;
+                                break;
                             }
-                        } catch (Exception e) {
-                            throw e;
-                        }
-
+                        } else if (method.isAnnotationPresent(Post.class)) {
+                            Post postAnnotation = method.getAnnotation(Post.class);
+                            if (postAnnotation.value().equals(controllerSearched)) {
+                                method = m;
+                                break;
+                            }
+                        }                        
                     }
-                } else {
-                    throw new Exception("le package est vide");
                 }
             }
-        } catch (Exception e) {
-            throw e;
         }
-    }
+    }       
 
-    private Object createRequestBodyParameter(Parameter parameter, Map<String, String[]> paramMap) throws Exception {
-        Class<?> paramType = parameter.getType();
-        Object paramObject = paramType.getDeclaredConstructor().newInstance();
-        for (Field field : paramType.getDeclaredFields()) {
-            String paramName = field.getName();
-            if (paramMap.containsKey(paramName)) {
-                String paramValue = paramMap.get(paramName)[0]; // Assuming single value for simplicity
-                field.setAccessible(true);
-                field.set(paramObject, paramValue);
-            }
-        }
-        return paramObject;
-    }
-    
-    private Object[] getMethodParameters(Method method, HttpServletRequest request) throws Exception {
+    private Object[] getMethodParameters(Method method, HttpServletRequest request, HttpServletResponse response) {
         Parameter[] parameters = method.getParameters();
-        Object[] parameterValues = new Object[parameters.length];
-    
-        HttpSession session = request.getSession();
+        Object[] params = new Object[parameters.length];
     
         for (int i = 0; i < parameters.length; i++) {
             Parameter parameter = parameters[i];
-            if (parameter.getType() == CustomSession.class) {
-                parameterValues[i] = new CustomSession(session);
-            } else if (parameter.isAnnotationPresent(RequestBody.class)) {
-                parameterValues[i] = createRequestBodyParameter(parameter, request.getParameterMap());
-            } else if (parameter.isAnnotationPresent(Param.class)) {
-                Param param = parameter.getAnnotation(Param.class);
-                parameterValues[i] = request.getParameter(param.value()); // Assuming all parameters are strings for simplicity
+    
+            // Vérifiez si le paramètre est annoté avec @Param
+            if (parameter.isAnnotationPresent(Param.class)) {
+                String paramName = parameter.getAnnotation(Param.class).value();
+                String paramValue = request.getParameter(paramName);
+                // Convertir la valeur en type approprié
+                params[i] = convertParameter(paramValue, parameter.getType());
+            } else if (parameter.getType() == HttpServletRequest.class) {
+                // Si le paramètre est de type HttpServletRequest, passez-le directement
+                params[i] = request;
+            } else if (parameter.getType() == HttpServletResponse.class) {
+                // Si le paramètre est de type HttpServletResponse, passez-le directement
+                params[i] = response;  // Ici, cela fonctionnera maintenant
             } else {
-                throw new IllegalArgumentException("Paramètre non supporté pour cette méthode");
+                // Autres types que vous devez gérer
+                params[i] = null; // Vous pouvez gérer cela selon vos besoins
             }
         }
     
-        return parameterValues;
-    }
+        return params;
+    }    
     
+    private Object convertParameter(String value, Class<?> type) {
+        if (value == null) {
+            return null;
+        }
+        if (type == String.class) {
+            return value;
+        } else if (type == int.class || type == Integer.class) {
+            return Integer.valueOf(value);
+        } else if (type == double.class || type == Double.class) {
+            return Double.valueOf(value);
+        }
+        // Ajoutez d'autres types selon vos besoins
+        return null; // Retournez null ou gérez les types non pris en charge
+    }    
 }
 
 class Mapping {
     String className;
     String methodeName;
-    String verb;  
+    List<VerbMethode> verbMeth;  
 
-    public Mapping(String className, String methodeName, String verb) {
+    public Mapping(String className, String methodeName, List<VerbMethode> verbMeth) {
         this.className = className;
         this.methodeName = methodeName;
-        this.verb = verb; 
+        this.verbMeth = verbMeth; 
     }
 
     public String getClassName() {
@@ -255,11 +227,11 @@ class Mapping {
         return methodeName;
     }
 
-    public String getVerb() {
-        return verb;
+    public List<VerbMethode> getVerbMeth() {
+        return verbMeth;
     }
 
-    public void setVerb(String verb) {
-        this.verb = verb;
+    public void setVerbMeth(List<VerbMethode> verbMeth) {
+        this.verbMeth = verbMeth;
     }
 }

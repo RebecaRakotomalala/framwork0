@@ -1,9 +1,6 @@
-Creer une nouvelle classe annotation (ex:Restapi)
-Dans la partie FrontController , on doit verifier l'existence de cette annotation
-    Si l'annotation n'existe pas ==> continuez comme avant
-    Si oui 
-        Recuperer la valeur de retour de la methode (gson)
-            Si autre que ModelView, transformer en json directement
-            Si ModelView, transformer en json la valeur de l'attribut "data"
-        Ne pas utiliser DispatchForward mais utiliser directement getWriter() et print(json)
-        Ne pas oublier de changer la respone type => text/json
+On derait savoir si le methode est GET ou POST, L'url depant aussi de ca
+Avant l'url est associé avec Classe + action (methode dans controlleur)
+mais maintenant il faut ajouter une autre attirbut (VERB) qui est soit GET soit POST
+Si il y a yn cas comme ca qui devrait elever une exception
+: methode na controlleur : @GET @url("/getemp") getEmp .... 
+alors que l'url "getemp" est appler en verb (method) POST !!

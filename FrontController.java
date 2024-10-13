@@ -1,11 +1,11 @@
 package mg.itu.prom16;
+import com.google.gson.Gson;
 
 import mg.itu.prom16.AnnotationController;
 import mg.itu.prom16.GetAnnotation;
 import mg.itu.prom16.Post;
 import mg.itu.prom16.Param;
-import mg.itu.prom16.CustomSession;
-import mg.itu.prom16.Restapi;
+import mg.itu.prom16.VerbAction;
 
 import java.io.File;
 import java.io.IOException;
@@ -15,10 +15,12 @@ import java.lang.reflect.Parameter;
 import java.net.URLDecoder;
 
 import mg.itu.prom16.ModelView; 
-import mg.itu.prom16.RequestBody;
+import mg.itu.prom16.GetAnnotation;
 import java.lang.reflect.Field;  
 import java.io.*;
 import java.lang.reflect.Executable;
+import java.lang.reflect.Method;
+import java.net.URLDecoder;
 import java.util.*;
 import java.util.concurrent.ExecutionException;
 import jakarta.servlet.RequestDispatcher; 
@@ -27,7 +29,6 @@ import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
-import com.google.gson.Gson;
 
 public class FrontController extends HttpServlet {
     private List<String> controller = new ArrayList<>();
@@ -47,8 +48,7 @@ public class FrontController extends HttpServlet {
         }
     }
 
-    protected void processRequest(HttpServletRequest request, HttpServletResponse response)
-            throws ServletException, IOException {
+    protected void processRequest(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
         PrintWriter out = response.getWriter();
         String[] requestUrlSplitted = request.getRequestURL().toString().split("/");
         String controllerSearched = requestUrlSplitted[requestUrlSplitted.length - 1];
@@ -62,18 +62,18 @@ public class FrontController extends HttpServlet {
             try {
                 Mapping mapping = lien.get(controllerSearched);
                 Class<?> clazz = Class.forName(mapping.getClassName());
-                Method method = null;
+                VerbAction action = mapping.getVerbActionByVerb(request.getMethod());
 
-                // Find the method that matches the request type (GET or POST)
+                if (action == null) {
+                    out.println("<p>Aucune méthode correspondante trouvée pour le verbe HTTP " + request.getMethod() + ".</p>");
+                    return;
+                }
+
+                Method method = null;
                 for (Method m : clazz.getDeclaredMethods()) {
-                    if (m.getName().equals(mapping.getMethodeName())) {
-                        if (request.getMethod().equalsIgnoreCase("GET") && m.isAnnotationPresent(GetAnnotation.class)) {
-                            method = m;
-                            break;
-                        } else if (request.getMethod().equalsIgnoreCase("POST") && m.isAnnotationPresent(Post.class)) {
-                            method = m;
-                            break;
-                        }
+                    if (m.getName().equals(action.getMethod())) {
+                        method = m;
+                        break;
                     }
                 }
 
@@ -82,33 +82,21 @@ public class FrontController extends HttpServlet {
                     return;
                 }
 
-                // Inject parameters
                 Object[] parameters = getMethodParameters(method, request);
-
                 Object object = clazz.getDeclaredConstructor().newInstance();
                 Object returnValue = method.invoke(object, parameters);
-
-                // Vérifier si la méthode est annotée avec @Restapi
                 if (method.isAnnotationPresent(Restapi.class)) {
-                    // Transformer le résultat en JSON
                     response.setContentType("application/json");
-                    Gson gson = new Gson();
-                    String jsonResponse;
+                    response.setCharacterEncoding("UTF-8");
 
-                    // Si le retour est ModelView, transformer seulement "data"
+                    Gson gson = new Gson();
                     if (returnValue instanceof ModelView) {
                         ModelView modelView = (ModelView) returnValue;
-                        jsonResponse = gson.toJson(modelView.getData());
+                        response.getWriter().write(gson.toJson(modelView.getData()));
                     } else {
-                        // Si ce n'est pas un ModelView, transformer directement l'objet
-                        jsonResponse = gson.toJson(returnValue);
+                        response.getWriter().write(gson.toJson(returnValue));
                     }
-
-                    // Envoyer la réponse JSON
-                    out.print(jsonResponse);
-
                 } else {
-                    // Si ce n'est pas une API REST, continuer comme avant
                     if (returnValue instanceof String) {
                         out.println("Méthode trouvée dans " + returnValue);
                     } else if (returnValue instanceof ModelView) {
@@ -122,6 +110,7 @@ public class FrontController extends HttpServlet {
                         out.println("Type de données non reconnu");
                     }
                 }
+
             } catch (Exception e) {
                 e.printStackTrace();
             }
@@ -164,28 +153,23 @@ public class FrontController extends HttpServlet {
 
                                 for (Method methode : methodes) {
                                     if (methode.isAnnotationPresent(GetAnnotation.class)) {
-                                        Mapping map = new Mapping(className, methode.getName());
-                                        String valeur = methode.getAnnotation(GetAnnotation.class).value();
-                                        if (lien.containsKey(valeur)) {
-                                            throw new Exception("double url" + valeur);
-                                        } else {
-                                            lien.put(valeur, map);
-                                        }
+                                        Mapping map = lien.computeIfAbsent(
+                                                methode.getAnnotation(GetAnnotation.class).value(),
+                                                k -> new Mapping(className)
+                                        );
+                                        map.addVerbAction(new VerbAction("GET", methode.getName()));
                                     } else if (methode.isAnnotationPresent(Post.class)) {
-                                        Mapping map = new Mapping(className, methode.getName());
-                                        String valeur = methode.getAnnotation(Post.class).value();
-                                        if (lien.containsKey(valeur)) {
-                                            throw new Exception("double url" + valeur);
-                                        } else {
-                                            lien.put(valeur, map);
-                                        }
+                                        Mapping map = lien.computeIfAbsent(
+                                                methode.getAnnotation(Post.class).value(),
+                                                k -> new Mapping(className)
+                                        );
+                                        map.addVerbAction(new VerbAction("POST", methode.getName()));
                                     }
                                 }
                             }
                         } catch (Exception e) {
                             throw e;
                         }
-
                     }
                 } else {
                     throw new Exception("le package est vide");
@@ -202,7 +186,7 @@ public class FrontController extends HttpServlet {
         for (Field field : paramType.getDeclaredFields()) {
             String paramName = field.getName();
             if (paramMap.containsKey(paramName)) {
-                String paramValue = paramMap.get(paramName)[0]; // Assuming single value for simplicity
+                String paramValue = paramMap.get(paramName)[0]; 
                 field.setAccessible(true);
                 field.set(paramObject, paramValue);
             }
@@ -220,11 +204,11 @@ public class FrontController extends HttpServlet {
             Parameter parameter = parameters[i];
             if (parameter.getType() == CustomSession.class) {
                 parameterValues[i] = new CustomSession(session);
-            } else if (parameter.isAnnotationPresent(RequestBody.class)) {
+            } else if (parameter.isAnnotationPresent(GetAnnotation.class)) {
                 parameterValues[i] = createRequestBodyParameter(parameter, request.getParameterMap());
             } else if (parameter.isAnnotationPresent(Param.class)) {
                 Param param = parameter.getAnnotation(Param.class);
-                parameterValues[i] = request.getParameter(param.value()); // Assuming all parameters are strings for simplicity
+                parameterValues[i] = request.getParameter(param.value()); 
             } else {
                 throw new IllegalArgumentException("Paramètre non supporté pour cette méthode");
             }
@@ -236,12 +220,12 @@ public class FrontController extends HttpServlet {
 }
 
 class Mapping {
-    String className;
-    String methodeName;
+    private String className;
+    private List<VerbAction> verbActions; 
 
-    public Mapping(String className, String methodeName) {
+    public Mapping(String className) {
         this.className = className;
-        this.methodeName = methodeName;
+        this.verbActions = new ArrayList<>(); 
     }
 
     public String getClassName() {
@@ -252,11 +236,28 @@ class Mapping {
         this.className = className;
     }
 
-    public String getMethodeName() {
-        return methodeName;
+    public List<VerbAction> getVerbActions() {
+        return verbActions;
     }
 
-    public void setMethodeName(String methodeName) {
-        this.methodeName = methodeName;
+    public void addVerbAction(VerbAction verbAction) {
+        this.verbActions.add(verbAction);
     }
-}
+
+    public VerbAction getVerbActionByVerb(String verb) {
+        for (VerbAction action : verbActions) {
+            if (action.getVerb().equalsIgnoreCase(verb)) {
+                return action;
+            }
+        }
+        return null;  
+    }
+
+    @Override
+    public String toString() {
+        return "Mapping{" +
+                "className='" + className + '\'' +
+                ", verbActions=" + verbActions +
+                '}';
+    }
+}  

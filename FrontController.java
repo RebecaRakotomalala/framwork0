@@ -247,7 +247,7 @@ class Mapping {
     public VerbAction getVerbActionByVerb(String verb) {
         for (VerbAction action : verbActions) {
             if (action.getVerb().equalsIgnoreCase(verb)) {
-                return action;
+                return action; //return action
             }
         }
         return null;  

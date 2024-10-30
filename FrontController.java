@@ -7,9 +7,6 @@ import mg.itu.prom16.Post;
 import mg.itu.prom16.Param;
 import mg.itu.prom16.VerbAction;
 
-import java.io.File;
-import java.io.IOException;
-import java.io.PrintWriter;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.net.URLDecoder;
@@ -29,7 +26,9 @@ import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
+import jakarta.servlet.annotation.MultipartConfig;
 
+@MultipartConfig
 public class FrontController extends HttpServlet {
     private List<String> controller = new ArrayList<>();
     private String controllerPackage;
@@ -50,6 +49,31 @@ public class FrontController extends HttpServlet {
 
     protected void processRequest(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
         PrintWriter out = response.getWriter();
+
+        if (request.getContentType() != null && request.getContentType().startsWith("multipart/form-data")) {
+            Part filePart = request.getPart("file"); // Récupère la partie du fichier
+            if (filePart != null) {
+                String fileName = filePart.getSubmittedFileName();
+                String uploadPath = getServletContext().getRealPath("") + File.separator + "uploads";
+                File uploadDir = new File(uploadPath);
+                if (!uploadDir.exists()) uploadDir.mkdir();
+
+                File file = new File(uploadPath + File.separator + fileName);
+                try (InputStream fileContent = filePart.getInputStream();
+                    FileOutputStream fos = new FileOutputStream(file)) {
+                    byte[] buffer = new byte[1024];
+                    int bytesRead;
+                    while ((bytesRead = fileContent.read(buffer)) != -1) {
+                        fos.write(buffer, 0, bytesRead);
+                    }
+                    out.println("<p>Fichier " + fileName + " téléchargé avec succès !</p>");
+                } catch (IOException e) {
+                    out.println("<p>Erreur lors du téléchargement du fichier.</p>");
+                }
+                return;
+            }
+        }
+
         String[] requestUrlSplitted = request.getRequestURL().toString().split("/");
         String controllerSearched = requestUrlSplitted[requestUrlSplitted.length - 1];
 

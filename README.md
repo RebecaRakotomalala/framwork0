@@ -1,6 +1,23 @@
-On derait savoir si le methode est GET ou POST, L'url depant aussi de ca
-Avant l'url est associé avec Classe + action (methode dans controlleur)
-mais maintenant il faut ajouter une autre attirbut (VERB) qui est soit GET soit POST
-Si il y a yn cas comme ca qui devrait elever une exception
-: methode na controlleur : @GET @url("/getemp") getEmp .... 
-alors que l'url "getemp" est appler en verb (method) POST !!
+# sprint0
+Creer une classe .java  dans votre espace de travail 
+Mettre une package de votre choix
+Annoter votre classe (exemple: @AnnotationController)
+Annoter la methode de votre classe annoter controller (exemple: @GetController)
+nommer init-param comme "controller-package"
+declarer dans  param-value  votre package 
+exemple :
+    <servlet>
+        <servlet-name>FrontController</servlet-name>
+        <servlet-class>mg.itu.prom16.FrontController</servlet-class>
+        <init-param>
+            <param-name>controller-package</param-name>
+            <param-value><!-- ecrire votre package ici --></param-value>
+        </init-param>
+    </servlet>
+    <servlet-mapping>
+        <servlet-name>FrontController</servlet-name>
+        <url-pattern>/*</url-pattern>
+    </servlet-mapping>
+
+
+

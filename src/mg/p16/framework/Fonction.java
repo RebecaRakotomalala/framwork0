@@ -303,7 +303,7 @@ public class Fonction {
                 mg.p16.annotations.Annotation.Param paramAnnotation = param
                         .getAnnotation(mg.p16.annotations.Annotation.Param.class);
                 if (paramAnnotation == null) {
-                    throw new Exception("Etu002635 : le parametre " + param.getName() + " dans " + method.getName()
+                    throw new Exception("Etu002502 : le parametre " + param.getName() + " dans " + method.getName()
                             + " doit avoir une annotation @Param");
                 }
                 paramValue = paramAnnotation.value();
@@ -324,7 +324,7 @@ public class Fonction {
                 mg.p16.annotations.Annotation.Valid validAnnotation = param
                         .getAnnotation(mg.p16.annotations.Annotation.Valid.class);
                 if (validAnnotation == null) {
-                    throw new Exception("Etu002635 : le parametre " + param.getName() + " dans " + method.getName()
+                    throw new Exception("Etu002502 : le parametre " + param.getName() + " dans " + method.getName()
                             + " doit avoir une annotation @Valid");
                 }
 
